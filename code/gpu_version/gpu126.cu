@@ -1016,8 +1016,8 @@ std::string REI(
     int c4 = costFun[3]; // cost of .
     int c5 = costFun[4]; // cost of +
 
-    const int langCacheCapacity      = 200000000;
-    const int temp_langCacheCapacity = 100000000;
+    const int langCacheCapacity      = 200000000/4;
+    const int temp_langCacheCapacity = 100000000/4;
     
     // 4 for "*", ".", "+" and "?"
     int *startPoints = new int [(maxCost + 2) * 4]();
@@ -1054,6 +1054,8 @@ std::string REI(
     // Enumeration of the next REs
     // ---------------------------
 
+    int thread_count = 512;
+
     bool onTheFly = false, lastRound = false;
     int shortageCost = -1;
 
@@ -1061,7 +1063,7 @@ std::string REI(
 
 
         // Once it uses a previous cost that is not fully stored, it should continue as the last round
-	    if (onTheFly) {
+        if (onTheFly) {
             int dif = REcost - shortageCost;
             if (dif == c2 || dif == c3 || dif == c1 + c4 || dif == c1 + c5) lastRound = true;
         }
@@ -1073,25 +1075,25 @@ std::string REI(
             int qIdx2 = startPoints[(REcost - c2 + 1) * 4] - 1;
             int qN = qIdx2 - qIdx1 + 1;
 
-            if (qN){
+            if (qN) {
                 int x = qIdx1, y;
                 do {
                     y = x + std::min(temp_langCacheCapacity - 1, qIdx2 - x);
                     qN = (y - x + 1);
-                    #ifndef MEASUREMENT_MODE
-                        printf("Cost %-2d | (Q) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n", 
-                                REcost, allREs, lastIdx, qN);
-                    #endif
-                    int qBlc = (qN + 1023) / 1024;
-                    QuestionMark<hash_set_t><<<qBlc, 1024>>>(x, y, onTheFly, d_langCache, d_temp_langCache, 
-                                                             d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, 
-                                                             hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
-                    checkCuda( cudaPeekAtLastError() );
-                    checkCuda( cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost) );
+#ifndef MEASUREMENT_MODE
+                    printf("Cost %-2d | (Q) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n",
+                        REcost, allREs, lastIdx, qN);
+#endif
+                    int qBlc = (qN + thread_count - 1) / thread_count;
+                    QuestionMark<hash_set_t> << <qBlc, thread_count >> > (x, y, onTheFly, d_langCache, d_temp_langCache,
+                        d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet,
+                        hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
+                    checkCuda(cudaPeekAtLastError());
+                    checkCuda(cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost));
                     allREs += qN;
-                    if (*FinalREIdx != -1) {startPoints[REcost * 4 + 1] = INT_MAX; goto exitEnumeration;}
-                    if (!onTheFly) storeUniqueREs(qN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache, 
-                                                  d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
+                    if (*FinalREIdx != -1) { startPoints[REcost * 4 + 1] = INT_MAX; goto exitEnumeration; }
+                    if (!onTheFly) storeUniqueREs(qN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache,
+                        d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
                     x = y + 1;
                 } while (y < qIdx2);
             }
@@ -1106,26 +1108,26 @@ std::string REI(
             int sIdx2 = startPoints[(REcost - c3 + 1) * 4] - 1;
             int sN = sIdx2 - sIdx1 + 1;
 
-            if (sN){
+            if (sN) {
                 int x = sIdx1, y;
                 do {
                     y = x + std::min(temp_langCacheCapacity - 1, sIdx2 - x);
                     sN = (y - x + 1);
-                    #ifndef MEASUREMENT_MODE
-                        printf("Cost %-2d | (S) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n", 
-                                REcost, allREs, lastIdx, sN);
-                    #endif
-                    int sBlc = (sN + 1023) / 1024;
-                    Star<hash_set_t><<<sBlc, 1024>>>(x, y, onTheFly, d_langCache, d_temp_langCache, 
-                                                     d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, 
-                                                     alphabetSize, ICsize, gtColumns, 
-                                                     hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
-                    checkCuda( cudaPeekAtLastError() );
-                    checkCuda( cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost) );
+#ifndef MEASUREMENT_MODE
+                    printf("Cost %-2d | (S) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n",
+                        REcost, allREs, lastIdx, sN);
+#endif
+                    int sBlc = (sN + thread_count - 1) / thread_count;
+                    Star<hash_set_t> << <sBlc, thread_count >> > (x, y, onTheFly, d_langCache, d_temp_langCache,
+                        d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet,
+                        alphabetSize, ICsize, gtColumns,
+                        hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
+                    checkCuda(cudaPeekAtLastError());
+                    checkCuda(cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost));
                     allREs += sN;
-                    if (*FinalREIdx != -1) {startPoints[REcost * 4 + 2] = INT_MAX; goto exitEnumeration;}
-                    if (!onTheFly) storeUniqueREs(sN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache, 
-                                                  d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
+                    if (*FinalREIdx != -1) { startPoints[REcost * 4 + 2] = INT_MAX; goto exitEnumeration; }
+                    if (!onTheFly) storeUniqueREs(sN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache,
+                        d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
                     x = y + 1;
                 } while (y < sIdx2);
             }
@@ -1141,26 +1143,26 @@ std::string REI(
             int cIdx3 = startPoints[(REcost - i - c4) * 4];
             int cIdx4 = startPoints[(REcost - i - c4 + 1) * 4] - 1;
             int cN = (cIdx4 - cIdx3 + 1) * (cIdx2 - cIdx1 + 1);
-            
+
             if (cN) {
                 int x = cIdx3, y;
                 do {
                     y = x + std::min(temp_langCacheCapacity / (2 * (cIdx2 - cIdx1 + 1)) - 1, cIdx4 - x); // 2 is for concat only (lr and rl)
                     cN = (y - x + 1) * (cIdx2 - cIdx1 + 1);
-                    #ifndef MEASUREMENT_MODE
-                        printf("Cost %-2d | (C) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n", 
-                                REcost, allREs, lastIdx, 2 * cN);
-                    #endif
-                    int cBlc = (cN + 1023) / 1024;
-                    Concat<hash_set_t><<<cBlc, 1024>>>(cIdx1, cIdx2, x, y, onTheFly, d_langCache, d_temp_langCache, 
-                                                       d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, alphabetSize, 
-                                                       ICsize, gtColumns, hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
-                    checkCuda( cudaPeekAtLastError() );
-                    checkCuda( cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost) );
+#ifndef MEASUREMENT_MODE
+                    printf("Cost %-2d | (C) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n",
+                        REcost, allREs, lastIdx, 2 * cN);
+#endif
+                    int cBlc = (cN + thread_count - 1) / thread_count;
+                    Concat<hash_set_t> << <cBlc, thread_count >> > (cIdx1, cIdx2, x, y, onTheFly, d_langCache, d_temp_langCache,
+                        d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, alphabetSize,
+                        ICsize, gtColumns, hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
+                    checkCuda(cudaPeekAtLastError());
+                    checkCuda(cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost));
                     allREs += 2 * cN;
-                    if (*FinalREIdx != -1) {startPoints[REcost * 4 + 3] = INT_MAX; goto exitEnumeration;}
-                    if (!onTheFly) storeUniqueREs(2 * cN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache, 
-                                                  d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
+                    if (*FinalREIdx != -1) { startPoints[REcost * 4 + 3] = INT_MAX; goto exitEnumeration; }
+                    if (!onTheFly) storeUniqueREs(2 * cN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache,
+                        d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
                     x = y + 1;
                 } while (y < cIdx4);
             }
@@ -1175,29 +1177,29 @@ std::string REI(
             int oIdx2 = startPoints[(REcost - c1 - c5 + 1) * 4] - 1;
             int oN = oIdx2 - oIdx1 + 1;
 
-            if (oN){
+            if (oN) {
                 int x = oIdx1, y;
                 do {
                     y = x + std::min(temp_langCacheCapacity - 1, oIdx2 - x);
                     oN = (y - x + 1);
-                    #ifndef MEASUREMENT_MODE
-                        printf("Cost %-2d | (O) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n", 
-                                REcost, allREs, lastIdx, oN);
-                    #endif
-                    int oBlc = (oN + 1023) / 1024;
-                    OrEpsilon<hash_set_t><<<oBlc, 1024>>>(x, y, onTheFly, d_langCache, d_temp_langCache, 
-                                                          d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, 
-                                                          hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
-                    checkCuda( cudaPeekAtLastError() );
-                    checkCuda( cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost) );
+#ifndef MEASUREMENT_MODE
+                    printf("Cost %-2d | (O) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n",
+                        REcost, allREs, lastIdx, oN);
+#endif
+                    int oBlc = (oN + thread_count - 1) / thread_count;
+                    OrEpsilon<hash_set_t> << <oBlc, thread_count >> > (x, y, onTheFly, d_langCache, d_temp_langCache,
+                        d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet,
+                        hPosBits, lPosBits, hNegBits, lNegBits, d_FinalREIdx);
+                    checkCuda(cudaPeekAtLastError());
+                    checkCuda(cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost));
                     allREs += oN;
-                    if (*FinalREIdx != -1) {startPoints[(REcost + 1) * 4] = INT_MAX; goto exitEnumeration;}
-                    if (!onTheFly) storeUniqueREs(oN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache, 
-                                                  d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
+                    if (*FinalREIdx != -1) { startPoints[(REcost + 1) * 4] = INT_MAX; goto exitEnumeration; }
+                    if (!onTheFly) storeUniqueREs(oN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache,
+                        d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
                     x = y + 1;
                 } while (y < oIdx2);
             }
-            
+
         }
         for (int i = c1; 2 * i <= REcost - c5; ++i) {
 
@@ -1212,20 +1214,20 @@ std::string REI(
                 do {
                     y = x + std::min(temp_langCacheCapacity / (oIdx2 - oIdx1 + 1) - 1, oIdx4 - x);
                     oN = (y - x + 1) * (oIdx2 - oIdx1 + 1);
-                    #ifndef MEASUREMENT_MODE
-                        printf("Cost %-2d | (O) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n", 
-                                REcost, allREs, lastIdx, oN);
-                    #endif
-                    int oBlc = (oN + 1023) / 1024;
-                    Or<hash_set_t><<<oBlc, 1024>>>(oIdx1, oIdx2, x, y, onTheFly, d_langCache, d_temp_langCache, 
-                                                   d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, hPosBits, 
-                                                   lPosBits, hNegBits, lNegBits, d_FinalREIdx);
-                    checkCuda( cudaPeekAtLastError() );
-                    checkCuda( cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost) );
+#ifndef MEASUREMENT_MODE
+                    printf("Cost %-2d | (O) | AllREs: %-11lu | StoredREs: %-10d | ToBeChecked: %-10d \n",
+                        REcost, allREs, lastIdx, oN);
+#endif
+                    int oBlc = (oN + thread_count - 1) / thread_count;
+                    Or<hash_set_t> << <oBlc, thread_count >> > (oIdx1, oIdx2, x, y, onTheFly, d_langCache, d_temp_langCache,
+                        d_temp_leftIdx, d_temp_rightIdx, cHashSet, iHashSet, hPosBits,
+                        lPosBits, hNegBits, lNegBits, d_FinalREIdx);
+                    checkCuda(cudaPeekAtLastError());
+                    checkCuda(cudaMemcpy(FinalREIdx, d_FinalREIdx, sizeof(int), cudaMemcpyDeviceToHost));
                     allREs += oN;
-                    if (*FinalREIdx != -1) {startPoints[(REcost + 1) * 4] = INT_MAX; goto exitEnumeration;}
-                    if (!onTheFly) storeUniqueREs(oN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache, 
-                                                  d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
+                    if (*FinalREIdx != -1) { startPoints[(REcost + 1) * 4] = INT_MAX; goto exitEnumeration; }
+                    if (!onTheFly) storeUniqueREs(oN, lastIdx, langCacheCapacity, onTheFly, d_langCache, d_temp_langCache,
+                        d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
                     x = y + 1;
                 } while (y < oIdx4);
             }
@@ -1240,11 +1242,11 @@ std::string REI(
 
     if (REcost == maxCost + 1) REcost--;
 
-    exitEnumeration:
+exitEnumeration:
 
     std::string output = "not_found";
     bool isREFromTempLangCache = true;
-    if (*FinalREIdx != -1) output = REtoString(isREFromTempLangCache, *FinalREIdx, lastIdx, alphabet, startPoints, 
+    if (*FinalREIdx != -1) output = REtoString(isREFromTempLangCache, *FinalREIdx, lastIdx, alphabet, startPoints,
         d_leftIdx, d_rightIdx, d_temp_leftIdx, d_temp_rightIdx);
 
     // cleanup
